@@ -42,16 +42,29 @@ def detect_ar_marker(image):
     corners, ids, rejectedImgPoints = aruco.detectMarkers(gray, aruco_dict, parameters=parameters)
 
     if ids is not None:
-        return corners[0]
+        ar_marker_coords = corners[0] 
     else:
         return None
-    
-    
+
+#from camera 
+camera_matrix = np.array([[fx, 0, cx],
+                          [0, fy, cy],
+                          [0, 0, 1]])
+
+dist_coeffs = np.array([k1, k2, p1, p2, k3])
+
+marker_length = 0.1 #size of AR Tag 
+
 def convert_to_camera_frame(ar_marker_coords):
-    tfBuffer = tf2_ros.Buffer()
-    tfListener = tf2_ros.TransformListener(tfBuffer)
-    trans = tfBuffer.lookup_transform(target_frame, source_frame, rospy.Time())
-    
+    rvec, tvec, _ = aruco.estimatePoseSingleMarkers(ar_marker_corners, marker_length, camera_matrix, dist_coeffs)
+    rmat = cv2.Rodrigues(rvec)[0]
+    transform_matrix = np.zeros((4, 4))
+    transform_matrix[:3, :3] = rmat
+    transform_matrix[:3, 3] = tvec.T
+    transform_matrix[3, 3] = 1
+    point_camera_frame = np.dot(transform_matrix, ar_marker_coords)
+    return point_camera_frame
+
     
 def camera_callback(data):
     try:
