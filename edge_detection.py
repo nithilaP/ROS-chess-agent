@@ -3,6 +3,20 @@ import numpy as np
 import cv2
 from sklearn.cluster import KMeans
 
+# Define global variables
+
+# RED HSV Value Calibration
+MIN_RED_HSV_MASK1 = (0, 70, 50)
+MAX_RED_HSV_MASK1 = (10, 255, 255)
+MIN_RED_HSV_MASK2 = (170, 70, 50)
+MAX_RED_HSV_MASK2 = (180, 255, 255)
+
+LINE_ANGLE_CUTOFF = 9
+WIDTH_CIRCLES = 7
+HEIGHT_CIRCLES = 6
+MULTIPLIER_LENGTH = 100
+INTERSECT_PTS_LAST = None
+
 def cyclic_intersection_pts(pts):
     """
     Sorts 4 points in clockwise direction with the first point been closest to 0,0
@@ -118,15 +132,16 @@ def point_on_image(x: int, y: int, image_shape: tuple):
     return 0 <= y < image_shape[0] and 0 <= x < image_shape[1]
 
 def video_capture():
-    MIN_RED_HSV = (0, 70, 90)
-    MAX_RED_HSV = (40, 255, 210)
-    LINE_ANGLE_CUTOFF = 9
-    WIDTH_CIRCLES = 7
-    HEIGHT_CIRCLES = 6
-    MULTIPLIER_LENGTH = 100
-    INTERSECT_PTS_LAST = None
 
-    
+    global MIN_RED_HSV_MASK1 
+    global MAX_RED_HSV_MASK1 
+    global MIN_RED_HSV_MASK2 
+    global MAX_RED_HSV_MASK2 
+    global LINE_ANGLE_CUTOFF
+    global WIDTH_CIRCLES
+    global HEIGHT_CIRCLES
+    global MULTIPLIER_LENGTH
+    global INTERSECT_PTS_LAST
 
     # Pipeline to get the data stream from the camera -> configuring camera
     pipeline = rs.pipeline()
@@ -154,15 +169,20 @@ def video_capture():
 
             hsv = cv2.cvtColor(color_image, cv2.COLOR_BGR2HSV)
 
+            depth_colormap = cv2.applyColorMap(cv2.convertScaleAbs(depth_image, alpha=0.03), cv2.COLORMAP_JET)
+
             # Get HSV values for tuning
             # mean_center_hsv = np.mean(hsv[len(hsv)//2], axis=0)
             # print('Current Mean Value:', mean_center_hsv)
             # mask the red color of the board
-            mask = cv2.inRange(hsv, MIN_RED_HSV, MAX_RED_HSV)
+            mask1 = cv2.inRange(hsv, MIN_RED_HSV_MASK1, MAX_RED_HSV_MASK1)
+            mask2 = cv2.inRange(hsv, MIN_RED_HSV_MASK2, MAX_RED_HSV_MASK2)
             blanks = np.ones_like(color_image) * 255
 
             # convert to white and black frame
-            black_out = cv2.bitwise_and(blanks, blanks, mask=mask)
+            black_out1 = cv2.bitwise_and(blanks, blanks, mask=mask1)
+            black_out2 = cv2.bitwise_and(blanks, blanks, mask=mask2)
+            black_out = cv2.bitwise_or(black_out1, black_out2)
             black_white = cv2.cvtColor(black_out, cv2.COLOR_BGR2GRAY)
 
             # contours
@@ -179,6 +199,7 @@ def video_capture():
 
             # cv2.namedWindow("RealSense", cv2.WINDOW_AUTOSIZE)
             cv2.imshow("Color", color_image)
+            cv2.imshow("Depth", depth_colormap)
             # cv2.imshow("Depth", depth_image)
             keystroke = cv2.waitKey(1)
             if keystroke == ord('q'):
@@ -228,8 +249,7 @@ def video_capture():
                 im_dst = cv2.warpPerspective(color_image, h, (WIDTH_CIRCLES*MULTIPLIER_LENGTH,  HEIGHT_CIRCLES*MULTIPLIER_LENGTH))
 
                 cv2.imwrite("hough_lines.png", im_dst)
-
-
+                
     finally:
         pipeline.stop()
 

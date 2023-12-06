@@ -20,7 +20,7 @@ def get_best_move(board_dict, player):
         player = chess.WHITE
     else:
         player = chess.BLACK
-    engine = chess.engine.SimpleEngine.popen_uci("/opt/homebrew/bin/stockfish")
+    engine = chess.engine.SimpleEngine.popen_uci("/usr/bin/stockfish")
     board = generate_chess_board(board_dict)
     board.turn = player
     best_move = engine.play(board, chess.engine.Limit(time=0.1))
@@ -29,8 +29,12 @@ def get_best_move(board_dict, player):
 
 def generate_chess_board(board_dict):
     board = chess.Board()
+    if board_dict == default_board_dict:
+        return board
     for piece in default_board_dict:
         for idx, start_loc in enumerate(default_board_dict[piece]):
             move = start_loc + board_dict[piece][idx]
             board.push_san(move)
     return board
+
+print(get_best_move(board_dict=default_board_dict, player="white"))
