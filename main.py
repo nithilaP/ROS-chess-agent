@@ -2,6 +2,9 @@ import pyrealsense2 as rs
 import numpy as np
 import cv2
 from sklearn.cluster import KMeans
+from edge_detection_utils import *
+from chess_engine import *
+import chess
 
 # Define global variables
 
@@ -12,124 +15,16 @@ MIN_RED_HSV_MASK2 = (170, 70, 50)
 MAX_RED_HSV_MASK2 = (180, 255, 255)
 
 LINE_ANGLE_CUTOFF = 9
-WIDTH_CIRCLES = 7
-HEIGHT_CIRCLES = 6
+WIDTH_SQUARE = 8
+HEIGHT_SQUARE = 8
 MULTIPLIER_LENGTH = 100
 INTERSECT_PTS_LAST = None
 
-def cyclic_intersection_pts(pts):
-    """
-    Sorts 4 points in clockwise direction with the first point been closest to 0,0
-    Assumption:
-        There are exactly 4 points in the input and
-        from a rectangle which is not very distorted
-    """
-    if pts.shape[0] != 4:
-        return None
+OFFSET = int(0.5 * MULTIPLIER_LENGTH) # 0.6
+SQUARE_SIZE = int(0.5 * MULTIPLIER_LENGTH) # 0.3
+CIRCLE_PIXELS = int(0.93 * MULTIPLIER_LENGTH)
 
-    # Calculate the center
-    center = np.mean(pts, axis=0)
-
-    # Sort the points in clockwise
-    cyclic_pts = [
-        # Top-left
-        pts[np.where(np.logical_and(pts[:, 0] < center[0], pts[:, 1] < center[1]))[0][0], :],
-        # Top-right
-        pts[np.where(np.logical_and(pts[:, 0] > center[0], pts[:, 1] < center[1]))[0][0], :],
-        # Bottom-Right
-        pts[np.where(np.logical_and(pts[:, 0] > center[0], pts[:, 1] > center[1]))[0][0], :],
-        # Bottom-Left
-        pts[np.where(np.logical_and(pts[:, 0] < center[0], pts[:, 1] > center[1]))[0][0], :]
-    ]
-
-    return np.array(cyclic_pts)
-
-def drawHoughLines(image, lines, output):
-    out = image.copy()
-    for line in lines:
-        rho, theta = line[0]
-        a = np.cos(theta)
-        b = np.sin(theta)
-        x0 = a * rho
-        y0 = b * rho
-        x1 = int(x0 + 10000 * (-b))
-        y1 = int(y0 + 10000 * (a))
-        x2 = int(x0 - 10000 * (-b))
-        y2 = int(y0 - 10000 * (a))
-        cv2.line(out, (x1, y1), (x2, y2), (0, 255, 0), 2)
-    cv2.imwrite(output, out)
-
-def intersection(m1: float, b1: float, m2: float, b2: float):
-    # Consider y to be equal and solve for x
-    # Solve:
-    #   m1 * x + b1 = m2 * x + b2
-    if b2 is np.nan or b1 is np.nan or m1 is np.nan or m2 is np.nan or m1 - m2 == 0:# 0.0000000001:
-        return None, None
-    x = (b2 - b1) / (m1 - m2)
-    # Use the value of x to calculate y
-    y = m1 * x + b1
-
-    return int(round(x)), int(round(y))
-
-def hough_lines_intersection(lines: np.array, image_shape: tuple):
-    """
-    Returns the intersection points that lie on the image
-    for all combinations of the lines
-    """
-    if len(lines.shape) == 3 and \
-            lines.shape[1] == 1 and lines.shape[2] == 2:
-        lines = np.squeeze(lines)
-    lines_count = len(lines)
-    intersect_pts = []
-    for i in range(lines_count - 1):
-        for j in range(i + 1, lines_count):
-            print(lines[i])
-            m1, b1 = polar2cartesian(lines[i][0], lines[i][1], True)
-            m2, b2 = polar2cartesian(lines[j][0], lines[j][1], True)
-            x, y = intersection(m1, b1, m2, b2)
-            # print(x, y)
-            if x is not None and y is not None and point_on_image(x, y, image_shape):
-                intersect_pts.append([x, y])
-                # print("appended")
-    return np.array(intersect_pts, dtype=int)
-
-
-def polar2cartesian(rho: float, theta_rad: float, rotate90: bool = False):
-    """
-    Converts line equation from polar to cartesian coordinates
-    Args:
-        rho: input line rho
-        theta_rad: input line theta
-        rotate90: output line perpendicular to the input line
-    Returns:
-        m: slope of the line
-           For horizontal line: m = 0
-           For vertical line: m = np.nan
-        b: intercept when x=0
-    """
-    x = np.cos(theta_rad) * rho
-    y = np.sin(theta_rad) * rho
-    m = np.nan
-    if not np.isclose(x, 0.0):
-        m = y / x
-    if rotate90:
-        if m is np.nan:
-            m = 0.0
-        elif np.isclose(m, 0.0):
-            m = np.nan
-        else:
-            m = -1.0 / m
-    b = 0.0
-    if m is not np.nan:
-        b = y - m * x
-    
-    return m, b
-
-def point_on_image(x: int, y: int, image_shape: tuple):
-    """
-    Returns true is x and y are on the image
-    """
-    return 0 <= y < image_shape[0] and 0 <= x < image_shape[1]
+BOARD_DISTANCE = 0
 
 def video_capture():
 
@@ -137,11 +32,18 @@ def video_capture():
     global MAX_RED_HSV_MASK1 
     global MIN_RED_HSV_MASK2 
     global MAX_RED_HSV_MASK2 
+
     global LINE_ANGLE_CUTOFF
-    global WIDTH_CIRCLES
-    global HEIGHT_CIRCLES
+    global WIDTH_SQUARE
+    global HEIGHT_SQUARE
     global MULTIPLIER_LENGTH
     global INTERSECT_PTS_LAST
+
+    global OFFSET
+    global SQUARE_SIZE
+    global CIRCLE_PIXELS
+
+    global BOARD_DISTANCE
 
     # Pipeline to get the data stream from the camera -> configuring camera
     pipeline = rs.pipeline()
@@ -155,6 +57,20 @@ def video_capture():
     config.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, 30)
 
     pipeline.start(config)
+    
+    last_state = [["black"] * 8,
+                  ["black"] * 8,
+                  [None] * 8,
+                  [None] * 8,
+                  [None] * 8,
+                  [None] * 8,
+                  ["white"] * 8,
+                  ["white"] * 8]
+    last_state = np.array(last_state)
+
+    last_state_mask = (last_state != None)
+    print(last_state_mask)
+    board = chess.Board()
 
     try:
         while True:
@@ -169,12 +85,10 @@ def video_capture():
 
             hsv = cv2.cvtColor(color_image, cv2.COLOR_BGR2HSV)
 
-            depth_colormap = cv2.applyColorMap(cv2.convertScaleAbs(depth_image, alpha=0.03), cv2.COLORMAP_JET)
-
             # Get HSV values for tuning
             # mean_center_hsv = np.mean(hsv[len(hsv)//2], axis=0)
             # print('Current Mean Value:', mean_center_hsv)
-            # mask the red color of the board
+            # mask the red color of the board -> https://stackoverflow.com/questions/32522989/opencv-better-detection-of-red-color
             mask1 = cv2.inRange(hsv, MIN_RED_HSV_MASK1, MAX_RED_HSV_MASK1)
             mask2 = cv2.inRange(hsv, MIN_RED_HSV_MASK2, MAX_RED_HSV_MASK2)
             blanks = np.ones_like(color_image) * 255
@@ -199,8 +113,6 @@ def video_capture():
 
             # cv2.namedWindow("RealSense", cv2.WINDOW_AUTOSIZE)
             cv2.imshow("Color", color_image)
-            cv2.imshow("Depth", depth_colormap)
-            # cv2.imshow("Depth", depth_image)
             keystroke = cv2.waitKey(1)
             if keystroke == ord('q'):
                 break
@@ -245,13 +157,58 @@ def video_capture():
                     if intersect_pts is None:
                         continue
 
-                h, status = cv2.findHomography(intersect_pts, np.array([[0, 0], [WIDTH_CIRCLES*MULTIPLIER_LENGTH, 0], [WIDTH_CIRCLES*MULTIPLIER_LENGTH, HEIGHT_CIRCLES*MULTIPLIER_LENGTH], [0, HEIGHT_CIRCLES*MULTIPLIER_LENGTH]]))
-                im_dst = cv2.warpPerspective(color_image, h, (WIDTH_CIRCLES*MULTIPLIER_LENGTH,  HEIGHT_CIRCLES*MULTIPLIER_LENGTH))
+                h, status = cv2.findHomography(intersect_pts, np.array([[0, 0], [WIDTH_SQUARE*MULTIPLIER_LENGTH, 0], [WIDTH_SQUARE*MULTIPLIER_LENGTH, HEIGHT_SQUARE*MULTIPLIER_LENGTH], [0, HEIGHT_SQUARE*MULTIPLIER_LENGTH]]))
+                im_dst = cv2.warpPerspective(color_image, h, (WIDTH_SQUARE*MULTIPLIER_LENGTH,  HEIGHT_SQUARE*MULTIPLIER_LENGTH))
+                # im_depth = cv2.warpPerspective(depth_image, h, (WIDTH_SQUARE*MULTIPLIER_LENGTH,  HEIGHT_SQUARE*MULTIPLIER_LENGTH))
+
 
                 cv2.imwrite("hough_lines.png", im_dst)
+
+
+                # Image Frame Processing -> Get & Analyze Gamestate
+                current_state = np.array([[None] * WIDTH_SQUARE] * HEIGHT_SQUARE)            
+                for i in range(WIDTH_SQUARE):
+                    for j in range(HEIGHT_SQUARE):
+                        # cv2.circle(output[0], (65 + i * 93, 65 + 93 * j), radius=5, thickness=-1, color=(0, 255, 0))
+                        # cv2.circle(output[0], (70 + i * 93, 70 + 93 * j), radius=5, thickness=-1, color=(0, 255, 0))
+                        min_x = OFFSET + i * CIRCLE_PIXELS
+                        min_y = OFFSET + j * CIRCLE_PIXELS
+                        max_x = min_x + SQUARE_SIZE
+                        max_y = min_y + SQUARE_SIZE
+                        cv2.rectangle(im_dst, (min_x, min_y), (max_x, max_y), color=(0, 255, 0), thickness=2)
+                        patch = color_image[min_x:max_x, min_y:max_y]
+                        # print(patch.shape)
+
+                        current_detection = piece_detection(patch)
+                        current_state[i, j] = current_detection
+                        text = "PIECE DETECTED" if current_detection else "NO PIECE DETECTED"
+                        chess_loc = convert_to_chess_loc(i, j)
+                        if current_detection == 1:
+                            print("Piece detected at", chess_loc)
+                        
+                        # Using cv2.putText() method
+                        im_dst = cv2.putText(im_dst, chess_loc, (int(max_x - SQUARE_SIZE/ 2), int(max_y - SQUARE_SIZE/ 2)), fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.3, color=(255, 0, 0), thickness=1)
+                        
+                cv2.imwrite("outlined_gamestate.png", im_dst)
+                current_state_mask = (current_state != None)
+                player_move = get_player_move(last_state_mask, current_state_mask, board, current_state)
+                if board.is_checkmate() or board.is_stalemate():
+                    print("GAME OVER - PLAYER WON")
+                    break
+                board.push_san(player_move)
+                robot_move = get_best_move(board, "black")
+                # send commands to Arduino function -> wait for response
+                board.push_san(robot_move)
+                last_state_mask = current_state_mask
+                last_state = current_state
+
+                if board.is_checkmate() or board.is_stalemate():
+                    print("GAME OVER - ROBOT WON")
+                    break
                 
     finally:
         pipeline.stop()
+        print("DONE")
 
 if __name__ == "__main__":
     video_capture()
