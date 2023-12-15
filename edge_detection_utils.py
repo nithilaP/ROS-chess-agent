@@ -4,6 +4,12 @@ import cv2
 
 LETTERS =  ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
 
+MIN_GREEN_HSV_MASK = (50, 100, 30)
+MAX_GREEN_HSV_MASK = (70, 255, 255)
+
+MIN_BLUE_HSV_MASK = (90, 50, 70)
+MAX_BLUE_HSV_MASK = (128, 255,255)
+
 def convert_to_chess_loc(i, j):
     global LETTERS
     return LETTERS[i] + str(8 - j)
@@ -125,7 +131,38 @@ def point_on_image(x: int, y: int, image_shape: tuple):
     """
     return 0 <= y < image_shape[0] and 0 <= x < image_shape[1]
 
-def piece_detection(patch_image):
-    min_distance = np.min(patch_image)
-    max_distance = np.max(patch_image)
-    return max_distance - min_distance >= 150
+def piece_detection(patch_image, im_dst):
+    global MIN_BLUE_HSV_MASK
+    global MAX_BLUE_HSV_MASK
+
+    global MIN_GREEN_HSV_MASK
+    global MAX_GREEN_HSV_MASK
+
+    hsv = cv2.cvtColor(im_dst, cv2.COLOR_BGR2HSV)
+
+    mask1 = cv2.inRange(hsv, MIN_GREEN_HSV_MASK, MAX_GREEN_HSV_MASK)
+    mask2 = cv2.inRange(hsv, MIN_BLUE_HSV_MASK, MAX_BLUE_HSV_MASK)
+    blanks_green = np.ones_like(im_dst) * 255
+    blanks_blue = np.ones_like(im_dst) * 255
+
+    # convert to white and black frame
+    green = cv2.bitwise_and(blanks_green, blanks_green, mask=mask1)
+    # black_out2 = cv2.bitwise_and(blanks, blanks, mask=mask2)
+    # black_out = cv2.bitwise_or(black_out1, black_out2)
+    green_outline = cv2.cvtColor(green, cv2.COLOR_BGR2GRAY)
+    blue = cv2.bitwise_and(blanks_blue, blanks_blue, mask=mask2)
+    blue_outline = cv2.cvtColor(blue, cv2.COLOR_BGR2GRAY)
+    cv2.imwrite("green.png", green_outline)
+    cv2.imwrite("blue.png", blue_outline)
+
+
+    patch_color = np.mean(patch_image, (0, 1)).reshape((1, 1, 3)).astype("uint8")
+    patch_color = cv2.cvtColor(patch_color, cv2.COLOR_BGR2HSV)
+    is_white = cv2.inRange(patch_color, MIN_BLUE_HSV_MASK, MAX_BLUE_HSV_MASK)[0]
+    is_black = cv2.inRange(patch_color, MIN_GREEN_HSV_MASK, MAX_GREEN_HSV_MASK)[0]
+    if is_black:
+        return "black"
+    if is_white:
+        return "white"
+    return None
+

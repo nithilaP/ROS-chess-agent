@@ -17,6 +17,7 @@ from edge_detection_utils import convert_to_2d, convert_to_chess_loc
 #     "BLACK_KING": ["e8"],
 #     "WHITE_KING": ["e1"]
 # }
+
 # def get_default_piece_2d():
 #     board_pieces = np.empty((8, 8), dtype=object)
 #     for piece_type in default_board_dict:
@@ -40,8 +41,9 @@ def get_player_move(last_state_mask, curr_state_mask, last_board, current_board_
     changes = np.bitwise_xor(last_state_mask, curr_state_mask)
     sum_changes = np.sum(changes)
     x, y = np.where(changes == 1)
-    locs = np.column_stack(x, y)
+    locs = np.column_stack((x, y))
     if sum_changes == 2:
+        print("2")
         start_loc = None
         end_loc = None
         for idx, loc in enumerate(locs):
@@ -53,6 +55,7 @@ def get_player_move(last_state_mask, curr_state_mask, last_board, current_board_
         end_chess_loc = convert_to_chess_loc(end_loc[0], end_loc[1])
         return f"{start_chess_loc}{end_chess_loc}"
     elif sum_changes == 1:
+        print("1")
         i, j = locs[0]
         start_chess_loc = convert_to_chess_loc(i, j)
         for possible_move in last_board.legal_moves:

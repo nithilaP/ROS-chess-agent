@@ -124,7 +124,7 @@ def video_capture():
             
                 # Hough Lines
                 try:
-                        # blank = blank[CROP:-CROP, CROP:-CROP] # Can crop the contour outline image
+                    # blank = blank[CROP:-CROP, CROP:-CROP] # Can crop the contour outline image
                     polar_lines = cv2.HoughLines(contour_outline_image, 1, np.pi / 180, 300, min_theta=1e-9)
                     polar_lines_squeeze = np.squeeze(polar_lines)
 
@@ -162,7 +162,7 @@ def video_capture():
                 # im_depth = cv2.warpPerspective(depth_image, h, (WIDTH_SQUARE*MULTIPLIER_LENGTH,  HEIGHT_SQUARE*MULTIPLIER_LENGTH))
 
 
-                cv2.imwrite("hough_lines.png", im_dst)
+                cv2.imwrite("cleared.png", im_dst)
 
 
                 # Image Frame Processing -> Get & Analyze Gamestate
@@ -172,19 +172,18 @@ def video_capture():
                         # cv2.circle(output[0], (65 + i * 93, 65 + 93 * j), radius=5, thickness=-1, color=(0, 255, 0))
                         # cv2.circle(output[0], (70 + i * 93, 70 + 93 * j), radius=5, thickness=-1, color=(0, 255, 0))
                         min_x = OFFSET + i * CIRCLE_PIXELS
-                        min_y = OFFSET + j * CIRCLE_PIXELS
                         max_x = min_x + SQUARE_SIZE
+                        min_y = OFFSET + j * CIRCLE_PIXELS
                         max_y = min_y + SQUARE_SIZE
                         cv2.rectangle(im_dst, (min_x, min_y), (max_x, max_y), color=(0, 255, 0), thickness=2)
-                        patch = color_image[min_x:max_x, min_y:max_y]
+                        patch = im_dst[min_y:max_y, min_x:max_x]
                         # print(patch.shape)
 
-                        current_detection = piece_detection(patch)
-                        current_state[i, j] = current_detection
-                        text = "PIECE DETECTED" if current_detection else "NO PIECE DETECTED"
                         chess_loc = convert_to_chess_loc(i, j)
-                        if current_detection == 1:
-                            print("Piece detected at", chess_loc)
+                        current_detection = piece_detection(patch, im_dst)
+                        current_state[i, j] = current_detection
+                        if current_detection != None:
+                            print(f"{current_detection} piece detected at", chess_loc)
                         
                         # Using cv2.putText() method
                         im_dst = cv2.putText(im_dst, chess_loc, (int(max_x - SQUARE_SIZE/ 2), int(max_y - SQUARE_SIZE/ 2)), fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.3, color=(255, 0, 0), thickness=1)
@@ -192,11 +191,13 @@ def video_capture():
                 cv2.imwrite("outlined_gamestate.png", im_dst)
                 current_state_mask = (current_state != None)
                 player_move = get_player_move(last_state_mask, current_state_mask, board, current_state)
+                print("PLAYER MOVE:", player_move)
                 if board.is_checkmate() or board.is_stalemate():
                     print("GAME OVER - PLAYER WON")
                     break
                 board.push_san(player_move)
                 robot_move = get_best_move(board, "black")
+                print("ROBOT MOVE:", robot_move)
                 # send commands to Arduino function -> wait for response
                 board.push_san(robot_move)
                 last_state_mask = current_state_mask
