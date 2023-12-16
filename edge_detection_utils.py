@@ -18,12 +18,6 @@ def convert_to_2d(chess_loc):
     return (LETTERS.index(chess_loc[0]), 8 - int(chess_loc[1]))
 
 def cyclic_intersection_pts(pts):
-    """
-    Sorts 4 points in clockwise direction with the first point been closest to 0,0
-    Assumption:
-        There are exactly 4 points in the input and
-        from a rectangle which is not very distorted
-    """
     if pts.shape[0] != 4:
         return None
 

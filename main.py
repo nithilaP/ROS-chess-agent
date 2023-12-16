@@ -6,8 +6,6 @@ from edge_detection_utils import *
 from chess_engine import *
 import chess
 
-# Define global variables
-
 # RED HSV Value Calibration
 MIN_RED_HSV_MASK1 = (0, 70, 50)
 MAX_RED_HSV_MASK1 = (10, 255, 255)
@@ -69,7 +67,6 @@ def video_capture():
     last_state = np.array(last_state)
 
     last_state_mask = (last_state != None)
-    print(last_state_mask)
     board = chess.Board()
 
     try:
@@ -118,7 +115,6 @@ def video_capture():
                 break
             if keystroke == ord(" "):
                 cv2.imwrite("contours_color.png", color_image)
-                cv2.imwrite("contours_depth.png", depth_image)
                 print("TOOK A SNAPSHOT")
                 cv2.imwrite("contour_outline_img.png", contour_outline_image)
             
@@ -133,14 +129,12 @@ def video_capture():
                     polar_lines[polar_lines[:, 0, 1] > (LINE_ANGLE_CUTOFF-1)*np.pi/LINE_ANGLE_CUTOFF, 0, 0] *= -1
                     polar_lines[polar_lines[:, 0, 1] > (LINE_ANGLE_CUTOFF-1)*np.pi/LINE_ANGLE_CUTOFF, 0, 1] -= np.pi
                 
-                    from sklearn.cluster import KMeans
                     kmeans = KMeans(n_clusters=4, n_init=10, max_iter=300).fit(polar_lines[:, 0, :])
                     polar_lines =  np.expand_dims(kmeans.cluster_centers_, axis=1)
                     drawHoughLines(color_image, polar_lines, 'hough_lines.png')
 
                     # Detect the intersection points
                     intersect_pts = hough_lines_intersection(polar_lines, contour_image.shape)
-                    # Sort the points in cyclic order
                     intersect_pts = cyclic_intersection_pts(intersect_pts)
                     if intersect_pts is None:
                         raise Exception("Intersections not found") 
@@ -159,7 +153,6 @@ def video_capture():
 
                 h, status = cv2.findHomography(intersect_pts, np.array([[0, 0], [WIDTH_SQUARE*MULTIPLIER_LENGTH, 0], [WIDTH_SQUARE*MULTIPLIER_LENGTH, HEIGHT_SQUARE*MULTIPLIER_LENGTH], [0, HEIGHT_SQUARE*MULTIPLIER_LENGTH]]))
                 im_dst = cv2.warpPerspective(color_image, h, (WIDTH_SQUARE*MULTIPLIER_LENGTH,  HEIGHT_SQUARE*MULTIPLIER_LENGTH))
-                # im_depth = cv2.warpPerspective(depth_image, h, (WIDTH_SQUARE*MULTIPLIER_LENGTH,  HEIGHT_SQUARE*MULTIPLIER_LENGTH))
 
 
                 cv2.imwrite("cleared.png", im_dst)
