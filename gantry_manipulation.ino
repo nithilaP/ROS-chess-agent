@@ -17,23 +17,25 @@ void setup()
   pinMode(zDIR, OUTPUT);
   pinMode(zSTEP, OUTPUT);
   Serial.begin(9600);
-}
+
   float POS[2] = {0,0};
   float userdata[2] = {0,0};
-  bool pincher = false; //true means actively pinching
+  bool pincher = false; //true = actively pinching
+}
+
   
 void loop()
 {
   if (Serial.available() > 0) {
-    for (int i=0; i<3;i++) {
+    for (int i=0; i<2;i++) {
       userdata[i] = Serial.read();
-      
     }
     
     Serial.println("Sending to coords: ");
-    Serial.println(userdata[1], userdata[2]);
+    Serial.println(userdata[0], userdata[1]);
   }
-  float xdis = userdata[1] - POS[1];
+  
+  float xdis = userdata[0] - POS[0];
   float ydis = userdata[1] - POS[1]; //distance in inches needed to travel
   // one revolution = 1.88" TEST, thus 200 steps = 1.88"
   float xSteps = 200*xdis/1.88;
@@ -83,11 +85,9 @@ void loop()
     delayMicroseconds(2000);
   }
   delay(1000);
-  
-  //reset variables
-  pincher = not pincher;
+
+  POS[0] = userdata[0];
   POS[1] = userdata[1];
-  POS[2] = userdata[2];
-  Serial.println("move complete"); //Sanity check
   
+  Serial.println("move complete"); //Sanity check
 }

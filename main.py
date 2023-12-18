@@ -1,7 +1,6 @@
 import pyrealsense2 as rs
 import numpy as np
 import cv2
-from sklearn.cluster import KMeans
 from edge_detection_utils import *
 from chess_engine import *
 import chess
@@ -13,7 +12,6 @@ MAX_RED_HSV_MASK1 = (10, 255, 255)
 MIN_RED_HSV_MASK2 = (170, 70, 50)
 MAX_RED_HSV_MASK2 = (180, 255, 255)
 
-ANGLE_CUTOFF = 9
 WIDTH_SQUARE = 8
 HEIGHT_SQUARE = 8
 MULTIPLIER = 100
@@ -111,15 +109,7 @@ def video_capture():
                 cv2.imwrite("contour_outline_img.png", contour_outline_image)
             
                 try:
-                    hough_lines = cv2.HoughLines(contour_outline_image, 1, np.pi / 180, 300, min_theta=1e-9)
-                    hough_lines_squeeze = np.squeeze(hough_lines)
-
-                    hough_lines = hough_lines[(polar_lines_squeeze[:, 1] < np.pi/ANGLE_CUTOFF) | (polar_lines_squeeze[:, 1] > (ANGLE_CUTOFF-1)*np.pi/ANGLE_CUTOFF) | ((polar_lines_squeeze[:, 1] > (ANGLE_CUTOFF-1)*np.pi/ANGLE_CUTOFF/2) & (polar_lines_squeeze[:, 1] < (ANGLE_CUTOFF+1)*np.pi/ANGLE_CUTOFF/2))]
-                    hough_lines[hough_lines[:, 0, 1] > (ANGLE_CUTOFF-1)*np.pi/ANGLE_CUTOFF, 0, 0] *= -1
-                    hough_lines[hough_lines[:, 0, 1] > (ANGLE_CUTOFF-1)*np.pi/ANGLE_CUTOFF, 0, 1] -= np.pi
-                
-                    kmeans = KMeans(n_clusters=4, n_init=10, max_iter=300).fit(hough_lines[:, 0, :])
-                    hough_lines =  np.expand_dims(kmeans.cluster_centers_, axis=1)
+                    hough_lines = get_hough_lines(contour_outline_image, angle_cutoff=9)
                     display_hough_lines(color_image, hough_lines, 'hough_lines.png')
 
                     intersect_pts = get_intersect_pts(hough_lines, contour_image)
@@ -139,7 +129,8 @@ def video_capture():
                     if intersect_pts is None:
                         continue
 
-                h, status = cv2.findHomography(intersect_pts, np.array([[0, 0], [WIDTH_SQUARE*MULTIPLIER, 0], [WIDTH_SQUARE*MULTIPLIER, HEIGHT_SQUARE*MULTIPLIER], [0, HEIGHT_SQUARE*MULTIPLIER]]))
+                h, status = cv2.findHomography(intersect_pts,
+                                                np.array([[0, 0], [WIDTH_SQUARE*MULTIPLIER, 0], [WIDTH_SQUARE*MULTIPLIER, HEIGHT_SQUARE*MULTIPLIER], [0, HEIGHT_SQUARE*MULTIPLIER]]))
                 im_dst = cv2.warpPerspective(color_image, h, (WIDTH_SQUARE*MULTIPLIER,  HEIGHT_SQUARE*MULTIPLIER))
 
 
@@ -176,7 +167,15 @@ def video_capture():
                 print("ROBOT MOVE:", robot_move)
 
                 # send commands to Arduino function -> wait for response
-                arduino.write(bytes(x, 'utf-8')) 
+                # check if something is there 
+                from_loc, to_loc = robot_move[:2], robot_move[2:]
+                i, j = convert_to_2d(to_loc)
+                if (current_state_mask[i][j] == 0):
+                    write_move(to_loc)
+                    write_move("taken")
+                write_move(from_loc)
+                write_move(to_loc)
+                write_move("origin")
 
                 board.push_san(robot_move)
                 last_state_mask = current_state_mask
